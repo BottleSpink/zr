@@ -121,3 +121,5 @@ submission.zip
 
 # Hydra outputs
 outputs/
+.DS_Store
+config/.DS_Store

@@ -16,12 +16,12 @@ def preemphasis(x, preemph):
 
 
 def mulaw_encode(x, mu):
-    mu = mu - 1
-    fx = np.sign(x) * np.log1p(mu * np.abs(x)) / np.log1p(mu)
+    mu = mu - 1 #255
+    fx = np.sign(x) * np.log1p(mu * np.abs(x)) / np.log1p(mu) #log(1+x)
     return np.floor((fx + 1) / 2 * mu + 0.5)
 
 
-def mulaw_decode(y, mu):
+def mulaw_decode(y, mu): ## used in the post model
     mu = mu - 1
     x = np.sign(y) / mu * ((1 + mu) ** np.abs(y) - 1)
     return x
@@ -33,7 +33,7 @@ def process_wav(wav_path, out_path, sr=160000, preemph=0.97, n_fft=2048, n_mels=
                           offset=offset, duration=duration)
     wav = wav / np.abs(wav).max() * 0.999
 
-    mel = librosa.feature.melspectrogram(preemphasis(wav, preemph),
+    mel = librosa.feature.melspectrogram(preemphasis(wav, preemph),#Use a digital filter #  to amplify the high frequencies
                                          sr=sr,
                                          n_fft=n_fft,
                                          n_mels=n_mels,
@@ -41,27 +41,28 @@ def process_wav(wav_path, out_path, sr=160000, preemph=0.97, n_fft=2048, n_mels=
                                          win_length=win_length,
                                          fmin=fmin,
                                          power=1)
-    logmel = librosa.amplitude_to_db(mel, top_db=top_db)
+    logmel = librosa.amplitude_to_db(mel, top_db=top_db) #db scale
     logmel = logmel / top_db + 1
 
-    wav = mulaw_encode(wav, mu=2**bits)
+    wav = mulaw_encode(wav, mu=2**bits) # to optimize the dynamic range of an analog audio signal before its digitalization.
+    print("out path", out_path)
 
-    np.save(out_path.with_suffix(".wav.npy"), wav)
-    np.save(out_path.with_suffix(".mel.npy"), logmel)
+    np.save(out_path.with_suffix(".wav.npy"), wav)  #without mel, just the wav + encoding
+    np.save(out_path.with_suffix(".mel.npy"), logmel)   #after calculating mel
     return out_path, logmel.shape[-1]
 
 
-@hydra.main(config_path="config/preprocessing.yaml")
+@hydra.main(config_path="config", config_name="preprocessing.yaml")
 def preprocess_dataset(cfg):
     in_dir = Path(utils.to_absolute_path(cfg.in_dir))
-    out_dir = Path(utils.to_absolute_path("datasets")) / str(cfg.dataset.dataset)
+    out_dir = Path(utils.to_absolute_path("datasets")) / str(cfg.dataset.dataset.dataset)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     executor = ProcessPoolExecutor(max_workers=cpu_count())
     for split in ["train", "test"]:
         print("Extracting features for {} set".format(split))
         futures = []
-        split_path = out_dir / cfg.dataset.language / split
+        split_path = out_dir / cfg.dataset.dataset.language / split
         with open(split_path.with_suffix(".json")) as file:
             metadata = json.load(file)
             for in_path, start, duration, out_path in metadata:
@@ -69,14 +70,14 @@ def preprocess_dataset(cfg):
                 out_path = out_dir / out_path
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 futures.append(executor.submit(
-                    partial(process_wav, wav_path, out_path, **cfg.preprocessing,
+                    partial(process_wav, wav_path, out_path,
                             offset=start, duration=duration)))
 
         results = [future.result() for future in tqdm(futures)]
 
-        lengths = [x[-1] for x in results]
+        lengths = [x[-1] for x in results] # last element
         frames = sum(lengths)
-        frame_shift_ms = cfg.preprocessing.hop_length / cfg.preprocessing.sr
+        frame_shift_ms = cfg.preprocessing.preprocessing.hop_length / cfg.preprocessing.preprocessing.sr
         hours = frames * frame_shift_ms / 3600
         print("Wrote {} utterances, {} frames ({:.2f} hours)".format(len(lengths), frames, hours))
 

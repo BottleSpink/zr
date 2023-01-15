@@ -2,4 +2,4 @@ defaults:
     - dataset: 2019/english
     - preprocessing: default
 
-in_dir: ???
+in_dir: /Users/krithiga.r/Downloads/zrcdataset/

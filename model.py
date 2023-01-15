@@ -76,7 +76,7 @@ class Jitter(nn.Module):
         return x
 
 
-class VQEmbeddingEMA(nn.Module):
+class VQEmbeddingEMA(nn.Module): #EMA instead of auxillary loss
     def __init__(self, n_embeddings, embedding_dim, commitment_cost=0.25, decay=0.999, epsilon=1e-5):
         super(VQEmbeddingEMA, self).__init__()
         self.commitment_cost = commitment_cost
@@ -85,7 +85,7 @@ class VQEmbeddingEMA(nn.Module):
 
         init_bound = 1 / 512
         embedding = torch.Tensor(n_embeddings, embedding_dim)
-        embedding.uniform_(-init_bound, init_bound)
+        embedding.uniform_(-init_bound, init_bound) #(1/512, -1/512)
         self.register_buffer("embedding", embedding)
         self.register_buffer("ema_count", torch.zeros(n_embeddings))
         self.register_buffer("ema_weight", self.embedding.clone())
@@ -111,8 +111,7 @@ class VQEmbeddingEMA(nn.Module):
         distances = torch.addmm(torch.sum(self.embedding ** 2, dim=1) +
                                 torch.sum(x_flat ** 2, dim=1, keepdim=True),
                                 x_flat, self.embedding.t(),
-                                alpha=-2.0, beta=1.0)
-
+                                alpha=-2.0, beta=1.0)  # out=β input+α (mat1i,@mat2i)
         indices = torch.argmin(distances.float(), dim=-1)
         encodings = F.one_hot(indices, M).float()
         quantized = F.embedding(indices, self.embedding)
